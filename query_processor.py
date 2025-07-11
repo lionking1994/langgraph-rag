@@ -72,7 +72,7 @@ Step 2: Generate SQL following these rules:
    - Use subquery: current_price < (SELECT current_price FROM products WHERE title = '[Product]')
    - Don't restrict by type unless specified
 10. For "most expensive/cheapest" in a category:
-    - Use ORDER BY current_price DESC/ASC LIMIT 1
+    - Use ORDER BY current_price DESC/ASC
 11. Limit large results to 20
 12. For queries about extremes (highest, cheapest, most), return ALL products with that value:
     - Example: WHERE review_rating = (SELECT MAX(review_rating) FROM products)
@@ -162,7 +162,7 @@ Query: "What's the most expensive cake mix?"
     }},
     "filters": []
   }},
-  "sql": "SELECT * FROM products WHERE type LIKE '%\"Cake\"%' ORDER BY current_price DESC LIMIT 1"
+  "sql": "SELECT * FROM products WHERE type LIKE '%\"Cake\"%' ORDER BY current_price DESC"
 }}
 
 Query: "How many products are cheaper than Apple Cinnamon Doughnut Mix?"
@@ -277,21 +277,47 @@ Return a JSON object with this structure:
         price_keywords = ['price', 'cost', 'amount', 'how much', 'current price']
         is_stock_query = any(kw in query.lower() for kw in stock_keywords)
         is_price_query = any(kw in query.lower() for kw in price_keywords)
-        
-        # If both max_quantity and current_price are present, show both
-        if 'max_quantity' in columns and 'current_price' in columns and len(results) > 0:
+        # If both max_quantity and current_price are present, show both for single product queries
+        if 'max_quantity' in columns and 'current_price' in columns and len(results) == 1:
             product_name = ''
             if 'title' in columns:
                 product_name = results[0][columns.index('title')]
             left = results[0][columns.index('max_quantity')]
             price = results[0][columns.index('current_price')]
-            if product_name:
-                return f"There are {left} {product_name} left in stock. The price is ${price}."
+            lower_query = query.lower()
+            # Use intent to decide what to show
+            intents = []
+            if intent_data:
+                if 'intent' in intent_data:
+                    intents = intent_data['intent']
+                elif 'analysis' in intent_data and 'intent' in intent_data['analysis']:
+                    intents = intent_data['analysis']['intent']
+            # If both price and stock are asked
+            if ('price' in intents and 'count' in intents) or (any(kw in lower_query for kw in ['stock', 'left', 'remaining', 'in stock']) and any(kw in lower_query for kw in ['price', 'cost', 'how much', 'current price'])):
+                if product_name:
+                    return f"There are {left} {product_name} left in stock. The price is ${price}."
+                else:
+                    return f"There are {left} items left in stock. The price is ${price}."
+            # If only price is asked
+            elif 'price' in intents or any(kw in lower_query for kw in ['price', 'cost', 'how much', 'current price']):
+                if product_name:
+                    return f"The price of the {product_name} is **${price}**."
+                else:
+                    return f"The price is **${price}**."
+            # If only stock is asked
+            elif 'count' in intents or any(kw in lower_query for kw in ['stock', 'left', 'remaining', 'in stock']):
+                if product_name:
+                    return f"There are {left} {product_name} left in stock."
+                else:
+                    return f"There are {left} items left in stock."
             else:
-                return f"There are {left} items left in stock. The price is ${price}."
-        
-        # If only price is present and the query is about price/cost
-        if is_price_query and 'current_price' in columns and len(results) > 0:
+                # Default: show both
+                if product_name:
+                    return f"There are {left} {product_name} left in stock. The price is ${price}."
+                else:
+                    return f"There are {left} items left in stock. The price is ${price}."
+        # If only price is present and the query is about price/cost for a single product
+        if is_price_query and 'current_price' in columns and len(results) == 1:
             price = results[0][columns.index('current_price')]
             product_name = ''
             if 'title' in columns:
@@ -300,26 +326,90 @@ Return a JSON object with this structure:
                 return f"The price of {product_name} is ${price}."
             else:
                 return f"The price is ${price}."
-        
-        # If only stock is present and the query is about stock
-        if is_stock_query and 'max_quantity' in columns and len(results) > 0:
+        # If only stock is present and the query is about stock for a single product
+        if is_stock_query and 'max_quantity' in columns and len(results) == 1:
             product_name = ''
             import re
             match = re.search(r'how many (.*?) (left|remaining|in stock)', query, re.IGNORECASE)
             if match:
                 product_name = match.group(1).strip()
             left = results[0][columns.index('max_quantity')]
-            if product_name:  # This line was incorrectly indented
+            if product_name:
                 return f"There are {left} {product_name} left in stock."
             else:
                 return f"There are {left} items left in stock."
-        
+        # If multiple products, show a Markdown list of all products with all available fields
+        if len(results) > 1 and ('title' in columns or 'current_price' in columns):
+            max_list = 20
+            show_count = min(len(results), max_list)
+            lines = []
+            if show_count > 5:
+                lines.append(f"Here are {show_count} products available:")
+            for row in results[:max_list]:
+                name = row[columns.index('title')] if 'title' in columns else ''
+                line = f"- {name}" if name else "- Product"
+                # --- Custom: Rating and Categories ---
+                rating = None
+                reviews = None
+                if 'review_rating' in columns:
+                    rating = row[columns.index('review_rating')]
+                if 'review_count' in columns:
+                    reviews = row[columns.index('review_count')]
+                if rating and reviews:
+                    line += f"\n    - Rating: {rating} ({reviews} reviews)"
+                elif rating:
+                    line += f"\n    - Rating: {rating} (not reviewed yet)"
+                elif reviews:
+                    line += f"\n    - Rating: not reviewed yet"
+                else:
+                    line += f"\n    - Rating: not reviewed yet"
+                # Categories: merge category, baking_category, type
+                cat_fields = []
+                for cat_col in ['category', 'baking_category', 'type']:
+                    if cat_col in columns:
+                        val = row[columns.index(cat_col)]
+                        if val:
+                            try:
+                                parsed = json.loads(val) if isinstance(val, str) and (val.startswith('[') or val.startswith('{')) else val
+                                if isinstance(parsed, list):
+                                    val = ', '.join(str(x) for x in parsed)
+                                else:
+                                    val = str(parsed)
+                            except Exception:
+                                pass
+                            if val:
+                                cat_fields.append(val)
+                if cat_fields:
+                    line += f"\n    - Categories: {', '.join(cat_fields)}"
+                # --- End custom ---
+                skip_cols = {'title', 'review_rating', 'review_count', 'category', 'baking_category', 'type'}
+                for idx, col in enumerate(columns):
+                    if col in skip_cols:
+                        continue
+                    value = row[idx]
+                    if value is None or value == '':
+                        continue
+                    try:
+                        parsed = json.loads(value) if isinstance(value, str) and (value.startswith('[') or value.startswith('{')) else value
+                        if isinstance(parsed, list):
+                            value = ', '.join(str(x) for x in parsed)
+                        elif isinstance(parsed, dict):
+                            value = ', '.join(f"{k}: {v}" for k, v in parsed.items())
+                        else:
+                            value = parsed
+                    except Exception:
+                        pass
+                    field_name = col.replace('_', ' ').capitalize()
+                    if 'url' in col and isinstance(value, str) and value.startswith('http'):
+                        value = f"[{value}]({value})"
+                    line += f"\n    - {field_name}: {value}"
+                lines.append(line)
+            return "\n".join(lines)
         # Default formatting for other queries
         formatted_data = []
         for row in results[:20]:
             row_dict = dict(zip(columns, row))
             formatted_data.append(row_dict)
-        
         intro_text = ""
         if total_count is not None:
             intro_text = f"There are {total_count} matching products."
@@ -327,7 +417,6 @@ Return a JSON object with this structure:
                 intro_text += f" Here are the first {len(results)}:"
             elif total_count > 0:
                 intro_text += " Here they are:"
-        
         prompt = ChatPromptTemplate.from_template("""
         Convert these database results into a natural, conversational response for the customer.
         {intro}
@@ -343,14 +432,12 @@ Return a JSON object with this structure:
         5. Highlight important information like ratings, categories, and dietary info if present in the results.
         Response:
         """)
-        
         response = self.llm.invoke(prompt.format(
             intro=intro_text,
             query=query,
             intent=intent_data.get("intent", []) if "intent" in intent_data else intent_data.get("analysis", {}).get("intent", []),
             results=json.dumps(formatted_data, indent=2)
         )).content.strip()
-        
         return response
     
     def process_query(self, query: str, context: Dict[str, str] = None) -> str:

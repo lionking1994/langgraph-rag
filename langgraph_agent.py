@@ -141,107 +141,91 @@ def semantic_search(state: AgentState) -> AgentState:
     state["last_node"] = "semantic_search"
     return state
 
-def format_final_answer(answer: str, user_query: str = "") -> str:  
-    import re  
-    count_patterns = [  
-        r'^how many', r'number of', r'count of', r'how much', r'what is the total', r'total number', r'how often', r'how frequently'  
-    ]  
-    is_count_query = any(re.search(pat, user_query.strip().lower()) for pat in count_patterns)  
-    if is_count_query:  
-        format_prompt = ChatPromptTemplate.from_template("""
-        The user asked: {user_query}  
-        Here is the raw answer from the database or context:  
-        {raw_answer}  
-        Please return ONLY single sentence, with no list or extra details. Do not include any product list, markdown, or explanations. Do not include disclaimers, hedging, or meta-comments. Only show the direct answer to the user's question.  
-        """)  
-    else:  
-        format_prompt = ChatPromptTemplate.from_template("""
-        The user asked: {user_query}  
-        Here is the raw answer from the database or context:  
-        {raw_answer}  
-        Please reformat the answer for clear, readable viewing in a chat UI. Use Markdown where appropriate:  
-        - If the answer contains a list of products, you MUST display it as a formatted list. Do not summarize it or omit it.
-        - Format product lists as a Markdown bullet list: '- Product Name: **$Price**'.  
-        - Bold prices (e.g., **$55**), but do not bold product names.  
-        - Use paragraphs and line breaks for clarity.  
-        - Do not include any disclaimers, hedging, or meta-comments.  
-        """)  
-    formatted = llm.invoke(format_prompt.format(raw_answer=answer, user_query=user_query)).content  
-    disclaimer_keywords = [  
-        r'discrepancy', r'context', r'verify', r'database results', r'If you have access',  
-        r'additional context', r'provided', r'helpful to', r'uncertain', r'not sure', r'cannot verify',  
-        r'If you have any more questions', r'If you need', r'If you require', r'If you would like',  
-        r'If you have access', r'If you have further', r'If you want', r'If you need more',  
-        r'If you have access to the complete database', r'If you have access to more information',  
-        r'If you have access to further details', r'If you have access to the full database',  
-        r'If you have access to the full context', r'If you have access to the full data',  
-        r'If you have access to the full product list', r'If you have access to the full information',  
-        r'If you have access to the full details', r'If you have access to the full records',  
-        r'If you have access to the full set', r'If you have access to the full source',  
-    ]  
-    pattern = re.compile(r'[^.]*(' + '|'.join(disclaimer_keywords) + r')[^.]*[\.!?]', re.IGNORECASE)  
-    formatted = pattern.sub('', formatted)  
-    formatted = formatted.replace('∗', '*')  
-    formatted = re.sub(r'\n{3,}', '\n\n', formatted)  
-    formatted = re.sub(r'\n\s*\n', '\n\n', formatted)  
-    return formatted.strip()  
+def synthesize_answer(state: AgentState) -> AgentState:
+    """Combine results and generate final answer, always using a single LLM call for synthesis and formatting."""
+    context_info = ""
+    if state.get("is_product_followup") and state.get("last_product_query"):
+        context_info = f"\nPrevious question: {state['last_product_query']}\nPrevious answer: {state['last_product_answer']}\n"
 
-def synthesize_answer(state: AgentState) -> AgentState:  
-    context_info = ""  
-    if state.get("is_product_followup") and state.get("last_product_query"):  
-        context_info = f"\nPrevious question: {state['last_product_query']}\nPrevious answer: {state['last_product_answer']}\n"  
-    if state.get("structured_results") and not state.get("semantic_results"):  
-        if state.get("is_product_followup"):  
-            prompt = ChatPromptTemplate.from_template("""
-            {context_info}  
-            Current question: {query}  
-            Current results: {structured}  
-            Provide a helpful answer that summarizes the facts. Do not include disclaimers, hedging, or comments about possible discrepancies. If there is no data, simply state so directly.
-            """)  
-            answer = llm.invoke(prompt.format(  
-                context_info=context_info,  
-                query=state["query"],  
-                structured=state["structured_results"]  
-            )).content  
-            state["final_answer"] = format_final_answer(answer, state["query"])  
-        else:  
-            state["final_answer"] = format_final_answer(state["structured_results"], state["query"])  
-    elif state.get("semantic_results") and not state.get("structured_results"):  
+    if state.get("structured_results") and not state.get("semantic_results"):
+        base_answer = state["structured_results"]
         prompt = ChatPromptTemplate.from_template("""
-        {context_info}  
-        Question: {query}  
-        Based on this information:  
-        {context}  
-        Provide a helpful answer that summarizes the facts. Do not include disclaimers, hedging, or comments about possible discrepancies. If there is no data, simply state so directly.
-        """)  
-        answer = llm.invoke(prompt.format(  
-            context_info=context_info,  
-            query=state["query"],  
-            context=state["semantic_results"]  
-        )).content  
-        state["final_answer"] = format_final_answer(answer, state["query"])  
-    elif state.get("structured_results") and state.get("semantic_results"):  
+        {context_info}
+        The user asked: {user_query}
+        Here is the answer from the database or context:
+        {raw_answer}
+
+        Please reformat and synthesize the answer for clear, readable viewing in a chat UI. Use Markdown where appropriate:
+        - If the answer contains a list of products, you MUST display it as a formatted list. Do not summarize it or omit it.
+        - If more than 5 products are listed, start with a sentence like 'Here are N [gluten-free] products available:' (use the actual count and relevant filter if possible).
+        - If more than 20 products should be listed, show only some of products among them.
+        - For each product, show the product name as a clickable link (if available), price, and a short, concise summary of the product (2-3 sentences max) on a new indented line. The summary should highlight the main features, benefits, or unique selling points. Avoid long or repetitive details.
+        - If available, show the product's rating and review count as 'Rating: X (Y reviews)' as the first sub-bullet or indented line under each product, before the description/summary. If there isn't review info, it should be not reviewed yet
+        - Show stock if available.
+        - Format product lists as a Markdown bullet list: '- Product Name: **$Price**'.
+        - Bold prices (e.g., **$55**), but do not bold product names.
+        - Use paragraphs and line breaks for clarity.
+        - If the user query is a count question (e.g., 'how many', 'number of', 'count of', 'how much', 'total number'), return ONLY a single sentence with the direct answer, no list or extra details.
+        - Do not include any disclaimers, hedging, or meta-comments.
+        - Avoid including duplicated information from previous answers
+        """)
+        answer = llm.invoke(prompt.format(
+            context_info=context_info,
+            user_query=state["query"],
+            raw_answer=base_answer
+        )).content
+        state["final_answer"] = answer.strip()
+    elif state.get("semantic_results") and not state.get("structured_results"):
+        base_answer = state["semantic_results"]
         prompt = ChatPromptTemplate.from_template("""
-        {context_info}  
-        Question: {query}  
-        Database Results:  
-        {structured}  
-        Additional Context:  
-        {semantic}  
-        Combine both sources to provide a comprehensive, direct answer that only summarizes the facts. Do not include disclaimers, hedging, or comments about possible discrepancies. If there is no data, simply state so directly.
-        """)  
-        answer = llm.invoke(prompt.format(  
-            context_info=context_info,  
-            query=state["query"],  
-            structured=state["structured_results"],  
-            semantic=state["semantic_results"]  
-        )).content  
-        state["final_answer"] = format_final_answer(answer, state["query"])  
-    else:  
-        state["final_answer"] = "I'm sorry, I couldn't find relevant information to answer your question."  
+        {context_info}
+        The user asked: {user_query}
+        Here is the answer from the context:
+        {raw_answer}
+
+        Please reformat and synthesize the answer for clear, readable viewing in a chat UI. Use Markdown where appropriate:
+        - If the answer contains a list of products, you MUST display it as a formatted list. Do not summarize it or omit it.
+        - If more than 5 products are listed, start with a sentence like 'Here are N [gluten-free] products available:' (use the actual count and relevant filter if possible).
+        - If more than 20 products should be listed, show only some of products among them.
+        - For each product, show the product name, price, and a short, view product link button, concise summary of the product (2-3 sentences max) on a new indented line. The summary should highlight the main features, benefits, or unique selling points. Avoid long or repetitive details.
+        - If available, show the product's rating and review count as 'Rating: X (Y reviews)' as the first sub-bullet or indented line under each product, before the description/summary. If there isn't review info, it should be not reviewed yet
+        - Show stock if available.
+        - Format product lists as a Markdown bullet list: '- Product Name: **$Price**'.
+        - Bold prices (e.g., **$55**), but do not bold product names.
+        - Use paragraphs and line breaks for clarity.
+        - If the user query is a count question (e.g., 'how many', 'number of', 'count of', 'how much', 'total number'), return ONLY a single sentence with the direct answer, no list or extra details.
+        - Do not include any disclaimers, hedging, or meta-comments.
+        - Avoid including duplicated information from previous answers
+        """)
+        answer = llm.invoke(prompt.format(
+            context_info=context_info,
+            user_query=state["query"],
+            raw_answer=base_answer
+        )).content
+        state["final_answer"] = answer.strip()
+    elif state.get("structured_results") and state.get("semantic_results"):
+        prompt = ChatPromptTemplate.from_template("""
+        {context_info}
+        The user asked: {user_query}
+        Database Results:
+        {structured}
+        Additional Context:
+        {semantic}
+
+        Combine both sources to provide a comprehensive, direct answer that only summarizes the facts. Use Markdown where appropriate. If the user query is a count question (e.g., 'how many', 'number of', 'count of', 'how much', 'total number'), return ONLY a single sentence with the direct answer, no list or extra details. Do not include disclaimers, hedging, or meta-comments.
+        """)
+        answer = llm.invoke(prompt.format(
+            context_info=context_info,
+            user_query=state["query"],
+            structured=state["structured_results"],
+            semantic=state["semantic_results"]
+        )).content
+        state["final_answer"] = answer.strip()
+    else:
+        state["final_answer"] = "I'm sorry, I couldn't find relevant information to answer your question."
     print("synthesize_answer final_answer:", state["final_answer"])
-    state["last_node"] = "synthesize"  
-    return state  
+    state["last_node"] = "synthesize"
+    return state
 
 def handle_non_product(state: AgentState) -> AgentState:
     prompt = ChatPromptTemplate.from_template("""
