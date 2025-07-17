@@ -28,15 +28,41 @@ A conversational AI assistant for King Arthur Baking products, built with Stream
 
 ## 🗂️ Project Structure
 ```
-chatbot/
-  app.py                # Streamlit UI
-  langgraph_agent.py    # LangGraph orchestration and routing
-  query_processor.py    # SQL, DB, and product query logic
-  products.db           # SQLite database
-  products.json         # Product data
-  faiss_mix/            # FAISS vector store
-  requirements.txt      # Python dependencies
-  README.md             # This file
+langgraph-rag/
+  app.py                  # Streamlit UI
+  src/
+    agent/
+      graph_builder.py    # LangGraph orchestration and graph logic
+      langgraph_agent.py  # LangGraph agent and routing
+    config.py             # Configuration
+    db/
+      products.db         # SQLite database
+      products.json       # Product data
+      setup_db.py         # Database setup script
+      sql_service.py      # SQL query logic
+      faiss_mix/
+        index.faiss       # FAISS vector index
+        index.pkl         # FAISS metadata
+    models/
+      agent_state.py      # Agent state dataclass
+    nodes/                # LangGraph node implementations
+      data_retrieval_node.py
+      general_chat_node.py
+      knowledge_search_node.py
+      reasoning_node.py
+      reasoning_router.py
+      response_synthesis_node.py
+      __init__.py
+    prompts/              # Prompt templates
+      ...
+    tools/
+      query_processor.py  # SQL, DB, and product query logic
+    utils/
+      prompt_service.py   # Prompt loading utilities
+      result_formatter.py # Output formatting
+  requirements.txt        # Python dependencies
+  README.md               # This file
+  Dockerfile              # (Optional) Containerization
 ```
 
 ---
@@ -46,13 +72,16 @@ chatbot/
 1. **Clone the repository**
    ```bash
    git clone <your-repo-url>
-   cd chatbot
+   cd langgraph-rag
    ```
 
 2. **Create and activate a virtual environment**
    ```bash
-   python3 -m venv venv
+   python -m venv venv
+   # On Unix/macOS:
    source venv/bin/activate
+   # On Windows:
+   venv\Scripts\activate
    ```
 
 3. **Install dependencies**
@@ -68,7 +97,7 @@ chatbot/
 
 5. **Prepare the database and vector store**
    ```bash
-   python setup_db.py
+   python src/db/setup_db.py
    ```
 
 6. **Run the app**
