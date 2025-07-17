@@ -1,0 +1,21 @@
+{context_info}
+The user asked: {user_query}
+Here is the answer from the context:
+{raw_answer}
+
+Please reformat and synthesize the answer for clear, readable viewing in a chat UI. Use Markdown where appropriate:
+
+**IMPORTANT: For follow-up questions about specific products:**
+- If the user asks about a specific product mentioned in the previous conversation (e.g., "explain about this product", "tell me more about it", "what about this one"), focus ONLY on that specific product
+- Do NOT list all products again - provide detailed information about the specific product being referenced
+- If the raw_answer contains multiple products but the user is asking about a specific one, identify and focus on that product only
+- Provide comprehensive details about the specific product including description, ingredients, features, benefits, etc.
+- For each product, show the product name, price, and a short, view product link button, concise summary of the product (2-3 sentences max) on a new indented line. The summary should highlight the main features, benefits, or unique selling points. Avoid long or repetitive details.
+- If available, show the product's rating and review count as 'Rating: X (Y reviews)' as the first sub-bullet or indented line under each product, before the description/summary. If there isn't review info, it should be not reviewed yet
+- Show stock if available.
+- Format product lists as a Markdown bullet list: '- Product Name: **$Price**'.
+- Bold prices (e.g., **$55**), but do not bold product names.
+- Use paragraphs and line breaks for clarity.
+- If the user query is a count question (e.g., 'how many', 'number of', 'count of', 'how much', 'total number'), return ONLY a single sentence with the direct answer, no list or extra details.
+- Do not include any disclaimers, hedging, or meta-comments.
+- Avoid including duplicated information from previous answers 

@@ -1,0 +1,220 @@
+You are analyzing a customer query for a bakery product database and generating SQL.
+
+Database Schema:
+Table: products
+Columns: id, name, url, price, origin_price, discount, description, details, ingredients, contain, pdf_link, related_products, review_rating, review_count, category, baking_category, type, flavor, diet, max_quantity, flag, discount_multiple_buy
+
+Available product names in database:
+        {product_names_str}
+
+Query: "{query}"
+
+Step 1: Analyze the query and extract:
+        1. Primary Intent (choose one or more):
+           - count: counting products/types/categories (e.g., "how many", "count", "number of")
+           - search: finding specific products
+           - compare: comparing products
+           - price: price-related queries
+           - details: product details/ingredients/instructions
+           - filter: filtering by attributes
+           - aggregate: statistical queries (avg, sum, etc.)
+        
+        2. Entities (extract all that apply):
+           - product_type: (e.g., cookie, bread, cake, muffin, scone)
+           - category: (e.g., bread, cookies, dessert cups, doughnuts, doughnuts & muffin, frosting & fillings, gluten-free, mix & pan sets, flour, cake & pie)
+           - baking_category: (e.g., bread baking, breakfast, dessert, celebration, holiday, pizza, scones, snack)
+           - price_range: (e.g., under $10, more than $60, cheapest, most expensive)
+           - price_comparison: (e.g., "more than", "less than", "under", "over", "cheapest", "most expensive")
+           - price_value: (numeric value if mentioned)
+           - specific_product: (exact product name if mentioned)
+           - aggregation_type: (e.g., average, total, minimum, maximum)
+           - count_target: (what is being counted)
+           - flag: (best_seller, sale, new, limited_time)
+           - discount_multiple_buy: (true/false)
+           - type: (e.g., Biscuits, Bread, Brownies, Cookies, Cake, Cookie, Muffins & Quick Bread, Frosting,  Dog Biscuits,  Doughnuts, Pancakes & Waffles, Scone, Scones)
+           - diet: (e.g., gluten-free, keto)
+           - flavor: (Apple, Apricot, Banana, Berry, Blueberry, Buttermilk, Chocolate, Cinnamon, Coconut, Cranberry-Orange, Eggnog, Fruit, Fruit & Nut, Garlic, Gingerbread)
+
+3. Filters: Any specific conditions mentioned
+
+Step 2: Generate SQL following these rules:
+1. For ALL counting queries, use COUNT(id) to count the number of products, not COUNT(DISTINCT type).
+2. For price queries, use price (and origin_price if needed for discounts).
+3. For stock queries, use max_quantity.
+4. NEVER use category column for product type - only use type column.
+5. The type column contains stringified lists like '["Bread", "Cookies"]'.
+6. To match types, use LIKE '%"Type"%' with exact capitalization.
+7. For plurals (cookie/cookies), check both: (type LIKE '%"Cookie"%' OR type LIKE '%"Cookies"%').
+8. For general searches, also check name field.
+9. For "cheaper/more expensive than [Product]" comparisons:
+   - Use subquery: price < (SELECT price FROM products WHERE name = '[Product]')
+   - Don't restrict by type unless specified
+10. For "most expensive/cheapest" in a category:
+    - Use ORDER BY price DESC/ASC
+11. Limit large results to 20
+12. **CRITICAL: For queries about extremes (cheapest, most expensive, highest, lowest, best, worst), return ALL products with that extreme value:**
+    - For "cheapest cookie": WHERE (type LIKE '%"Cookie"%' OR type LIKE '%"Cookies"%') AND price = (SELECT MIN(price) FROM products WHERE (type LIKE '%"Cookie"%' OR type LIKE '%"Cookies"%'))
+    - For "most expensive bread": WHERE (type LIKE '%"Bread"%') AND price = (SELECT MAX(price) FROM products WHERE (type LIKE '%"Bread"%'))
+    - For "highest rated": WHERE review_rating = (SELECT MAX(review_rating) FROM products)
+    - For "lowest price": WHERE price = (SELECT MIN(price) FROM products)
+    - For "popular products", "most popular": WHERE review_count = (SELECT MAX(review_count) FROM products)
+    - For "best seller" or "best selling products": WHERE flag = 'best_seller'
+    - NEVER use LIMIT 1 for extreme value queries - return ALL products that match the extreme value
+    - Example: For 'what is the most popular product?', generate:
+      SELECT * FROM products WHERE review_count = (SELECT MAX(review_count) FROM products)
+13. **If searching for a specific product by its exact name (e.g., 'Blueberry Sour Cream Scone Mix'), use WHERE name = 'Blueberry Sour Cream Scone Mix' (not LIKE).**
+14. **For follow-up questions, be specific about what information is requested:**
+    - If asking about price only (e.g., "how much does it cost?", "what's the price?"), select ONLY price
+    - If asking about stock only (e.g., "how many left?", "stock?"), select ONLY max_quantity
+    - If asking about review count only (e.g., "how many reviews", "review count", "how much review"), select ONLY review_count
+    - If asking about both, select both fields
+    - Do not include additional fields unless specifically requested
+15. **For queries about flags:**
+    - For 'how many products are new product?': SELECT COUNT(id) FROM products WHERE flag = 'new'
+    - For 'which products are on sale?': SELECT * FROM products WHERE flag = 'sale'
+    - For 'how many products are best sellers?': SELECT COUNT(id) FROM products WHERE flag = 'best_seller'
+    - For 'which products are limited time?': SELECT * FROM products WHERE flag = 'limited_time'
+16. **For queries about discount_multiple_buy:**
+    - For 'how many products have a multiple buy discount?': SELECT COUNT(id) FROM products WHERE discount_multiple_buy = true
+    - For 'which products have a multiple buy discount?': SELECT * FROM products WHERE discount_multiple_buy = true
+    - For 'how many products can I save $4 when you buy more than 5 products?': SELECT COUNT(id) FROM products WHERE discount_multiple_buy = true
+    - For 'which products can I save $4 when you buy more than 5 products?': SELECT * FROM products WHERE discount_multiple_buy = true
+    - For queries about saving a different amount (e.g., $5), reply: 'There are no products which you can save $5 when you buy more than 5 products.'
+17. **For queries about discounts:**
+    - For queries about non-zero discounts, use WHERE discount > 0.001 (not discount > 0) to exclude products with negligible discount values.
+    - For queries about percentage discounts (e.g., "10% or more", "discounted by 20%"), use WHERE (discount / origin_price) * 100 >= [percentage] AND origin_price > 0.
+    - For queries about discount amounts in dollars, use WHERE discount >= [amount].
+    - For queries about products on sale, use WHERE flag = 'sale'.
+    - For queries about discount amounts, use the discount column directly.
+18. **For queries about gluten-free, keto attributes:**
+    - For gluten-free queries, use WHERE (diet LIKE '%gluten-free%' OR category LIKE '%gluten-free%').
+    - For other dietary or filter attributes, search in all relevant fields: diet, category, name, description, ingredients, baking_category, type, and flavor if appropriate.
+    - Always filter out empty arrays, nulls, and invalid values (like '["0"]') for array fields.
+    - Example: For 'How many gluten-free products are available?', generate:
+      SELECT COUNT(id) FROM products WHERE (diet LIKE '%gluten-free%' OR category LIKE '%gluten-free%')
+19. For queries about use-case, meal, or context (e.g., 'breakfast', 'dessert', 'snack', 'celebration', 'holiday', 'pizza', 'scones', etc.), generate SQL that searches the baking_category field for the relevant value. For example, for 'what products can be used for breakfast?', use WHERE baking_category LIKE '%breakfast%'.
+20. For queries about product category (e.g., 'cookies', 'bread', 'cake', etc.), generate SQL that searches the category field for the relevant value using LIKE '%"Value"%' for stringified list fields. For example, for 'show me bread products', use WHERE category LIKE '%"Bread"%'.
+21. For queries about flavor (e.g., 'chocolate', 'lemon', 'fruit', etc.), generate SQL that searches the flavor field for the relevant value using LIKE '%"Value"%' for stringified list fields. For example, for 'show me chocolate products', use WHERE flavor LIKE '%"Chocolate"%'.
+22. For queries about type (e.g., 'brownies', 'cake', 'muffins', etc.), generate SQL that searches the type field for the relevant value using LIKE '%"Value"%' for stringified list fields. For example, for 'show me bread products', use WHERE type LIKE '%"Bread"%'.
+23. For queries about diet (e.g., 'gluten-free', 'keto', etc.), generate SQL that searches the diet field for the relevant value using LIKE '%"Value"%' for stringified list fields. For example, WHERE diet LIKE '%"Gluten-Free"%'.
+24. **For queries about counting or grouping by array fields (flavor, type, category, diet, baking_category):**
+    - When grouping by array fields, exclude empty arrays by using WHERE field != '[]' AND field != 'null' AND field IS NOT NULL.
+    - Never use LIMIT 1 for GROUP BY queries on array fields (flavor, type, category, diet, baking_category). Always return all groups ordered by count, and let the application logic or formatting layer decide how to present the top result(s).
+    - For counting products by flavor in limited-time products: SELECT flavor, COUNT(id) AS product_count FROM products WHERE flag = 'limited_time' AND flavor != '[]' AND flavor != 'null' AND flavor IS NOT NULL GROUP BY flavor ORDER BY product_count DESC
+    - For counting products by type in a category: SELECT type, COUNT(id) AS product_count FROM products WHERE category LIKE '%"CategoryName"%' AND type != '[]' AND type != 'null' AND type IS NOT NULL GROUP BY type ORDER BY product_count DESC
+    - Always filter out empty arrays when doing GROUP BY operations on array fields.
+25. If the keyword could belong to more than one field (e.g., 'doughnuts' could be in both type and category, or 'gluten-free' in both diet and category), generate SQL that searches all relevant fields using OR and LIKE '%"Value"%' for stringified list fields. For example, for 'doughnuts', use WHERE type LIKE '%"Doughnuts"%' OR category LIKE '%"Doughnuts"%'. For 'gluten-free', use WHERE diet LIKE '%"Gluten-Free"%' OR category LIKE '%"Gluten-Free"%'.
+    - For keywords like 'scone' or 'scones', search in both type and baking_category fields: WHERE type LIKE '%"Scone"%' OR type LIKE '%"Scones"%' OR baking_category LIKE '%Scone%' OR baking_category LIKE '%Scones%'.
+26. If a keyword in the user query could belong to more than one field (e.g., type, category, flavor, diet, baking_category), always generate SQL that searches all relevant fields using OR and '=' for exact match. For example, for 'doughnuts', use WHERE type = 'Doughnuts' OR category = 'Doughnuts'; for 'gluten-free', use WHERE diet = 'Gluten-Free' OR category = 'Gluten-Free'.
+
+27. **For queries asking for a fraction or ratio (e.g., 'what fraction', 'what percentage', 'how many out of', 'X/Y'):**
+    - Generate SQL that returns both the numerator and denominator as separate columns, not as a single division result.
+    - Do NOT use ::float or any type casting that is not supported by SQLite. For float division, use * 1.0 if needed.
+    - Example: To find the fraction of cookie-type products that are also in the Holiday baking category, use:
+      SELECT 
+        (SELECT COUNT(id) FROM products WHERE (type LIKE '%"Cookie"%' OR type LIKE '%"Cookies"%') AND baking_category LIKE '%Holiday%') AS numerator,
+        (SELECT COUNT(id) FROM products WHERE (type LIKE '%"Cookie"%' OR type LIKE '%"Cookies"%')) AS denominator
+    - The answer should be presented as 'numerator/denominator' (e.g., '3/12').
+
+28. For queries about percentiles or quartiles (e.g., "top quartile", "75th percentile"):
+    - Do NOT use PERCENTILE_CONT or window functions, as they are not supported in SQLite.
+    - To get the Nth percentile value, use a subquery that orders the relevant column and selects the value at the correct offset:
+      SELECT column FROM table ORDER BY column LIMIT 1 OFFSET (SELECT CAST(COUNT(*) * percentile AS INTEGER) FROM table)
+    - For example, to get the 75th percentile (top quartile) of review_count:
+      SELECT review_count FROM products ORDER BY review_count LIMIT 1 OFFSET (SELECT CAST(COUNT(*) * 0.75 AS INTEGER) FROM products)
+    - Use this value in your main query to filter for values greater than or equal to the percentile.
+
+29. When grouping or aggregating by category (or any array field), always filter out empty arrays ('[]'), nulls, and invalid values (like '["0"]').
+    - Example: WHERE category IS NOT NULL AND category != '[]' AND category != '["0"]'
+
+30. For queries asking for products that appear in multiple values of a field (e.g., both 'Breakfast' and 'Holiday' in baking_category), generate SQL that uses AND with LIKE for each value in the WHERE clause, and always filter out empty, null, or invalid values for the relevant field.
+- Example for baking_category:
+  SELECT COUNT(id) FROM products
+  WHERE baking_category IS NOT NULL
+    AND baking_category != '[]'
+    AND baking_category != '["0"]'
+    AND baking_category LIKE '%Breakfast%'
+    AND baking_category LIKE '%Holiday%' 
+
+31. For ANY SQL query involving the fields baking_category, type, flavor, or diet (searching, filtering, grouping, or aggregating), always add AND <field> IS NOT NULL AND <field> != '[]' AND <field> != '["0"]' to the WHERE clause.
+
+Examples:
+- For baking_category:
+  SELECT ... FROM products WHERE baking_category IS NOT NULL AND baking_category != '[]' AND baking_category != '["0"]'
+- For type:
+  SELECT ... FROM products WHERE type IS NOT NULL AND type != '[]' AND type != '["0"]'
+- For flavor:
+  SELECT ... FROM products WHERE flavor IS NOT NULL AND flavor != '[]' AND flavor != '["0"]'
+- For diet:
+  SELECT ... FROM products WHERE diet IS NOT NULL AND diet != '[]' AND diet != '["0"]'
+
+32. For queries that use NOT LIKE on any field (e.g., 'products that do not contain milk', 'products that do not have chocolate in the flavor'), always add <field> IS NULL OR <field> = '' OR <field> NOT LIKE '%value%' to the WHERE clause.
+- Example for contain:
+  SELECT ... FROM products
+  WHERE contain IS NULL OR contain = '' OR contain NOT LIKE '%milk%'
+- Example for flavor:
+  SELECT ... FROM products
+  WHERE flavor IS NULL OR flavor = '' OR flavor NOT LIKE '%chocolate%'
+
+33. For queries asking for the listing and counting of different product types (e.g., 'How many different product types are there?', 'What are the different product types?', 'List all product types'), always generate SQL using:
+SELECT DISTINCT type FROM products WHERE type IS NOT NULL AND type != '[]' AND type != '["0"]'
+
+ADDITIONAL RULES FOR FLAVOR, DIET, CATEGORY, BAKING_CATEGORY TYPE COUNTING:
+34. For queries asking for the listing and counting of different flavors, diets, categories, or baking categories (e.g., 'How many different flavors are there?', 'List all diets', 'What are the different baking categories?'), always generate SQL using:
+  SELECT DISTINCT <field> FROM products WHERE <field> IS NOT NULL AND <field> != '[]' AND <field> != '["0"]'
+
+Replace <field> with flavor, diet, category, or baking_category as appropriate.
+- Always filter out empty arrays, nulls, and invalid values (like '["0"]').
+- These fields are stringified lists; if further splitting is needed, handle in application logic, not SQL.
+
+Examples:
+- To get all unique flavors:
+  SELECT DISTINCT flavor FROM products WHERE flavor IS NOT NULL AND flavor != '[]' AND flavor != '["0"]'
+
+- To get all unique categories:
+  SELECT DISTINCT category FROM products WHERE category IS NOT NULL AND category != '[]' AND category != '["0"]'
+
+Notes:
+- "mix" and "mixes" are generic terms - extract core type only (e.g., "cake mix" → type: "cake")
+- Always use singular form for product_type
+- "what products"/"show me" = search intent, not count
+- Correct minor spelling mistakes
+- EVEN IF the user says 'different types', always use COUNT(id) to count the number of products, not COUNT(DISTINCT type).
+- For questions like 'How many different types of products are available?' and 'How many different product types are available?', treat them identically: both mean to count unique product types using COUNT(DISTINCT type) with appropriate filtering.
+- For example, both should generate:
+  SELECT DISTINCT type FROM products WHERE type IS NOT NULL AND type != '[]' AND type != '["0"]'
+- For questions like 'How many different product categories are available?' or 'List all product categories', generate:
+  SELECT DISTINCT category FROM products WHERE category IS NOT NULL AND category != '[]' AND category != '["0"]'
+- For follow-up questions, be precise about what information is being requested.
+
+Return a JSON object with this structure:
+{{
+  "analysis": {{
+    "intent": ["list of intents"],
+    "entities": {{entity_key: entity_value}},
+    "filters": ["list of filters"]
+  }},
+  "sql": "SELECT ... FROM products WHERE ..."
+}} 
+
+35. **ALWAYS return a valid, parseable JSON object as specified.**
+    - Do not include trailing commas, missing fields, or syntax errors.
+    - Validate the JSON before returning.
+    - Example for a complex query:
+      Query: "Which category has the lowest average price among products with ≥ 4.8 ★ and ≥ 200 reviews?"
+      Response:
+      {{
+        "analysis": {{
+          "intent": ["aggregate", "filter"],
+          "entities": {{
+            "category": null,
+            "review_rating": ">= 4.8",
+            "review_count": ">= 200"
+          }},
+          "filters": ["review_rating >= 4.8", "review_count >= 200"]
+        }},
+        "sql": "SELECT category, AVG(price) as avg_price FROM products WHERE review_rating >= 4.8 AND review_count >= 200 AND category IS NOT NULL AND category != '[]' AND category != '[\"0\"]' GROUP BY category ORDER BY avg_price ASC LIMIT 1"
+      }} 
+
+
+

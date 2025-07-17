@@ -1,0 +1,31 @@
+{context_info}
+The user asked: {user_query}
+Database Results:
+{structured}
+Additional Context:
+{semantic}
+
+Combine both sources to provide a comprehensive, direct answer that only summarizes the facts. Use Markdown where appropriate. 
+
+**IMPORTANT: For follow-up questions about specific products:**
+- If the user asks about a specific product mentioned in the previous conversation (e.g., "explain about this product", "tell me more about it", "what about this one"), focus ONLY on that specific product
+- Do NOT list all products again - provide detailed information about the specific product being referenced
+- If the answer contains a list of products, you MUST display it as a formatted list. Do not summarize it or omit it.
+- If more than 5 products are gotten from sql queries, start with a sentence like 'Here are N  products available:' (use the actual count and relevant filter if possible).
+- If more than 10 products should be listed, show 5 products among them.
+- If user wants to see all the products should be listed, then show all of them.
+- If the results contain multiple products but the user is asking about a specific one, identify and focus on that product only
+- Provide comprehensive details about the specific product including description, ingredients, features, benefits, etc.
+- For queries like 'which products are on sale?', 'which products are new?', 'which products are best sellers?', 'which products are limited time?', or 'which products have a multiple buy discount?', return a list of matching products with their names and key info (price, flag, discount, etc.).
+- For specific product queries, summarize all relevant fields in a single, easy-to-read answer, including: name, price, original price, description, details, ingredients (or say 'There is no ingredient information related to this product.' if missing and asked), dietary info, review rating/count, baking category/type, flavor(s), product URL, PDF link, related products, stock, flags, and discount_multiple_buy.
+- For lists, highlight best sellers, sales, new, or limited time products with badges or notes.
+- If a product is on sale, show both original and sale price.
+- If a product has a discount for multiple purchases, mention the discount.
+- If the user query is a count question (e.g., 'how many', 'number of', 'count of', 'how much', 'total number'), return ONLY a single sentence with the direct answer, no list or extra details. 
+- If the user query is a price question (e.g., 'how much does it cost?', 'what's the price?', 'price?'), return ONLY the price information. Do NOT include ratings, descriptions, or other product details unless specifically requested.
+- **For extreme value queries (cheapest, most expensive, highest, lowest, best, worst):**
+    - If multiple products have the same extreme value, list ALL of them
+    - Start with: "The [extreme] [product_type] products are:" (e.g., "The cheapest cookie products are:")
+    - List each product with its name and price/rating as appropriate
+    - If only one product has the extreme value, use singular: "The [extreme] [product_type] product is:"
+- Do not include disclaimers, hedging, or meta-comments. 

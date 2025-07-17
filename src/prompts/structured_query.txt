@@ -1,0 +1,44 @@
+{context_info}
+The user asked: {user_query}
+Here is the answer from the database or context:
+{raw_answer}
+
+Please reformat and synthesize the answer for clear, readable viewing in a chat UI. Use Markdown where appropriate:
+
+**IMPORTANT: For follow-up questions about specific products:**
+- If the user asks about a specific product mentioned in the previous conversation (e.g., "explain about this product", "tell me more about it", "what about this one"), focus ONLY on that specific product
+- Do NOT list all products again - provide detailed information about the specific product being referenced
+- If the raw_answer contains multiple products but the user is asking about a specific one, identify and focus on that product only
+- Provide comprehensive details about the specific product including description, ingredients, features, benefits, etc.
+
+- If the answer contains a list of products, you MUST display it as a formatted list. Do not summarize it or omit it.
+- If more than 5 products are listed, start with a sentence like 'Here are N [gluten-free] products available:' (use the actual count and relevant filter if possible).
+- If more than 20 products should be listed, show only some of products among them.
+- For each product, show the product name as a clickable link (if available), price, and a short, concise summary of the product (2-3 sentences max) on a new indented line. The summary should highlight the main features, benefits, or unique selling points. Avoid long or repetitive details.
+- If available, show the product's rating and review count as 'Rating: X (Y reviews)' as the first sub-bullet or indented line under each product, before the description/summary. If there isn't review info, it should be not reviewed yet
+- Show stock if available.
+- Format product lists as a Markdown bullet list: '- Product Name: **$Price**'.
+- Bold prices (e.g., **$55**), but do not bold product names.
+- Use paragraphs and line breaks for clarity.
+- If the user query is a count question (e.g., 'how many', 'number of', 'count of', 'how much', 'total number'), return ONLY a single sentence with the direct answer, no list or extra details.
+- If the user query is a price question (e.g., 'how much does it cost?', 'what's the price?', 'price?'), return ONLY the price information. Do NOT include ratings, descriptions, or other product details unless specifically requested.
+- For queries like 'how many products are new product?', 'how many products are on sale?', 'how many products are best sellers?', 'how many products are limited time?', or 'how many products have a multiple buy discount?', return only the count in a single sentence.
+- For queries like 'which products are on sale?', 'which products are new?', 'which products are best sellers?', 'which products are limited time?', or 'which products have a multiple buy discount?', return a list of matching products with their names and key info (price, flag, discount, etc.).
+- For specific product queries, summarize all relevant fields in a single, easy-to-read answer.
+- For lists, highlight best sellers, sales, new, or limited time products with badges or notes.
+- If a field is missing, do not mention it. If ingredients are missing and the user asks about them, say 'There is no ingredient information related to this product.'
+- If a product is on sale, show both original and sale price.
+- **If a product has a discount for multiple purchases, mention this in the summary.**
+- **For extreme value queries (cheapest, most expensive, highest, lowest, best, worst), always return all products that match the extreme value, never just one.**
+
+**If the SQL result is None or 0 (no matching products, or aggregate is null):**
+- For count queries, say: 'There are no products that match your criteria.'
+- For aggregate queries (e.g., average, sum, min, max), say: 'There are no products with an [aggregate] for the given filters.'
+- For specific context, use: 'There are no [product type/category/flag] products that match your criteria.'
+- For example:
+    - 'There are no best sellers that are also limited-time offers.'
+    - 'There are no products with an average discount percentage for the given filters.'
+    - 'No products found for your query.'
+- Do not say 'I couldn't find any matching products or information.'
+- Do not include any disclaimers, hedging, or meta-comments.
+- Avoid including duplicated information from previous answers 
